@@ -1,7 +1,8 @@
 ﻿using UnityEngine;
 using System.Collections;
+using CodeMonkey.HealthSystemCM;
 
-public class HeroKnight : MonoBehaviour {
+public class HeroKnight : MonoBehaviour, IGetHealthSystem {
 
     [SerializeField] float      m_speed = 4.0f;
     [SerializeField] float      m_jumpForce = 7.5f;
@@ -26,7 +27,11 @@ public class HeroKnight : MonoBehaviour {
     private float               m_rollDuration = 8.0f / 14.0f;
     private float               m_rollCurrentTime;
     private bool                hasWallJumped = false;
-
+    private bool                blocking = false;
+    public AudioSource source;
+    public AudioClip sfx1, sfx2, sfx3, sfx4;
+    public int aliveState = 1;
+    private HealthSystem healthSystem;
 
     // Use this for initialization
     void Start ()
@@ -38,6 +43,28 @@ public class HeroKnight : MonoBehaviour {
         m_wallSensorR2 = transform.Find("WallSensor_R2").GetComponent<Sensor_HeroKnight>();
         m_wallSensorL1 = transform.Find("WallSensor_L1").GetComponent<Sensor_HeroKnight>();
         m_wallSensorL2 = transform.Find("WallSensor_L2").GetComponent<Sensor_HeroKnight>();
+
+
+    }
+
+    void Awake()
+    {
+        healthSystem = new HealthSystem(100);
+
+        healthSystem.OnDead += HealthSystem_OnDead;
+    }
+
+    public void Damage()
+    {
+        healthSystem.Damage(7);
+    }
+
+    private void HealthSystem_OnDead(object sender, System.EventArgs e)
+    {
+        m_animator.SetBool("noBlood", m_noBlood);
+        m_animator.SetTrigger("Death");
+        blocking = false;
+        aliveState = 0;
     }
 
     // Update is called once per frame
@@ -73,7 +100,7 @@ public class HeroKnight : MonoBehaviour {
         float inputX = Input.GetAxis("Horizontal");
 
         // Swap direction of sprite depending on walk direction
-        if (inputX > 0)
+        if (inputX > 0 && aliveState == 1)
         {
             GetComponent<SpriteRenderer>().flipX = false;
             m_facingDirection = 1;
@@ -86,7 +113,7 @@ public class HeroKnight : MonoBehaviour {
         }
 
         // Move
-        if (!m_rolling )
+        if (!m_rolling && blocking == false && aliveState == 1)
             m_body2d.velocity = new Vector2(inputX * m_speed, m_body2d.velocity.y);
 
         //Set AirSpeed in animator
@@ -98,20 +125,25 @@ public class HeroKnight : MonoBehaviour {
         m_animator.SetBool("WallSlide", m_isWallSliding);
 
         //Death
-        if (Input.GetKeyDown("e") && !m_rolling)
+        if (Input.GetKeyDown("e") && !m_rolling & aliveState == 1)
         {
             m_animator.SetBool("noBlood", m_noBlood);
             m_animator.SetTrigger("Death");
+            blocking = false;
+            aliveState = 0;
         }
             
         //Hurt
-        else if (Input.GetKeyDown("q") && !m_rolling)
+        else if (Input.GetKeyDown("q") && !m_rolling & aliveState == 1)
+        {
             m_animator.SetTrigger("Hurt");
-
+            blocking = false;
+        }
         //Attack
-        else if(Input.GetKeyDown("z") && m_timeSinceAttack > 0.25f && !m_rolling)
+        else if(Input.GetKeyDown("z") && m_timeSinceAttack > 0.25f && !m_rolling & aliveState == 1)
         {
             m_currentAttack++;
+            blocking = false;
 
             // Loop back to one after third attack
             if (m_currentAttack > 3)
@@ -123,38 +155,54 @@ public class HeroKnight : MonoBehaviour {
 
             // Call one of three attack animations "Attack1", "Attack2", "Attack3"
             m_animator.SetTrigger("Attack" + m_currentAttack);
+            source.clip = sfx3;
+            source.Play();
 
             // Reset timer
             m_timeSinceAttack = 0.0f;
         }
 
         // Block
-        else if (Input.GetKeyDown("x") && !m_rolling)
+        else if (Input.GetKeyDown("x") && !m_rolling & aliveState == 1)
         {
-            m_animator.SetTrigger("Block");
-            m_animator.SetBool("IdleBlock", true);
+            if (blocking == false)
+            {
+                m_animator.SetTrigger("Block");
+                m_animator.SetBool("IdleBlock", true);
+                blocking = true;
+                source.clip = sfx4;
+                source.Play();
+            }
+            else if (blocking == true)
+            {
+                m_animator.SetBool("IdleBlock", false);
+                blocking = false;
+            }
         }
 
-        else if (Input.GetMouseButtonUp(1))
-            m_animator.SetBool("IdleBlock", false);
-
         // Roll
-        else if (Input.GetKeyDown("left shift") && !m_rolling && !m_isWallSliding)
+        else if (Input.GetKeyDown("left shift") && !m_rolling && !m_isWallSliding && aliveState == 1)
         {
             m_rolling = true;
             m_animator.SetTrigger("Roll");
             m_body2d.velocity = new Vector2(m_facingDirection * m_rollForce, m_body2d.velocity.y);
+            blocking = false;
+            source.clip = sfx1;
+            source.Play();
         }
             
 
         //Jump
-        else if (Input.GetKeyDown("space") && m_grounded && !m_rolling)
+        else if (Input.GetKeyDown("space") && m_grounded && !m_rolling & aliveState == 1)
         {
             m_animator.SetTrigger("Jump");
             m_grounded = false;
             m_animator.SetBool("Grounded", m_grounded);
             m_body2d.velocity = new Vector2(m_body2d.velocity.x, m_jumpForce);
             m_groundSensor.Disable(0.2f);
+            blocking = false;
+            source.clip = sfx2;
+            source.Play();
         }
 
         //Run
@@ -166,7 +214,7 @@ public class HeroKnight : MonoBehaviour {
         }
 
         //Wall Jump
-        else if (Input.GetKeyDown("space") && m_grounded == false && m_isWallSliding == true && hasWallJumped == false)
+        else if (Input.GetKeyDown("space") && m_grounded == false && m_isWallSliding == true && hasWallJumped == false & aliveState == 1)
         {
             m_animator.SetTrigger("Jump");
             m_grounded = false;
@@ -205,5 +253,20 @@ public class HeroKnight : MonoBehaviour {
             // Turn arrow in correct direction
             dust.transform.localScale = new Vector3(m_facingDirection, 1, 1);
         }
+    }
+    void FixedUpdate()
+    {
+        if (aliveState == 1)
+        {
+            Debug.Log("Player is alive.");
+        }
+        else
+        {
+            Debug.Log("Player is dead.");
+        }
+    }
+    HealthSystem GetHealthSystem();
+    {
+        
     }
 }
